@@ -1,1 +1,510 @@
+```{r echo = FALSE}
+rm(list = ls())
+setwd("C:/Users/Sanzhar/OneDrive/Documents/Bay Path/Time series/Working folder")
+library(fpp2)
+```
 
+```{r echo = FALSE}
+wti = ts(read.csv("wti_price.csv")[,2], start = c(1995,1), frequency = 12)
+autoplot(wti)+ggtitle("Figure 1. WTI oil price 1995-2021")+ylab("price, $")
+```
+Is WTI data seasonal?
+```{r echo = FALSE}
+ggseasonplot(wti, year.labels = TRUE)+ggtitle("Figure 2. Seasonal plot of WTI")
+```
+
+```{r echo = FALSE}
+ggsubseriesplot(wti)+ggtitle("Figure 3. Subseries plot")+ylab("Price, $")
+```
+
+
+```{r echo = FALSE}
+ggAcf(wti)+ggtitle("Figure 4. Autocorrelation of WTI")
+```
+
+
+#Diagnostic plots have shown that there is no seasonality. Each year on the seasonal plot has a unique pattern, especially in the more volatile years of the 21st century. A constant descending pattern of the autocorrelation plot suggests the presence of a trend but not seasonality.
+
+#create training and test sets
+```{r echo = FALSE}
+train = window(wti, end = c(2019,12))
+test = window(wti, start = c(2020, 1))
+```
+
+###################
+# ETS model
+###################
+
+#Compare performance of ETS with raw and Box-Cox Transformed data
+
+#ETS without BoxCox
+```{r echo = FALSE}
+wti.ets = ets(train)
+summary(wti.ets)
+```
+#auto model selection suggests no trend. However, from the exploratory analysis we know that the data has a trend, therefore ETS(M,A,N) model will be fitted
+
+```{r echo = FALSE}
+wti.my.ets = ets(train, model = c("MAN"))
+summary(wti.my.ets)
+```
+
+
+```{r echo = FALSE}
+fc.ets = forecast(wti.my.ets,h=19)
+ets.y.hat = as.data.frame(fc.ets)[,1]
+autoplot(fc.ets)+autolayer(test)+ggtitle("Figure 5. ETS(M,A,N) forecast with non-transformed data")+ylab("Price, $")
+```
+
+
+```{r echo = FALSE}
+ets.error = mean(sum((ets.y.hat-test)^2))
+paste("ETS(MAN) MSE without transformation =",round(ets.error))
+```
+#Compare with ETS model built on Box-Cox transformed data
+```{r echo = FALSE}
+lambda = BoxCox.lambda(train)
+paste("Lambda=",round(lambda,4))
+wti.bc = BoxCox(wti, lambda = lambda)
+```
+
+#Create training and test sets of Box-Cox data
+```{r echo = FALSE}
+train.bc = window(wti.bc, end = c(2019,12))
+test.bc = window(wti.bc, start = c(2020,1))
+```
+
+#Auto selected ETS model suggest damped trend
+```{r echo = FALSE}
+ets(train.bc)
+```
+
+#since the time horizon is not long, 1.5 years, it is suggested to use an undamped trend
+```{r echo = FALSE}
+wti.ets.bc = ets(train.bc, model = "AAN", damped = FALSE)
+wti.ets.bc
+```
+
+
+```{r echo = FALSE}
+fc.ets.bc = forecast(wti.ets.bc,h=19)
+ets.y.hat.bc = as.data.frame(fc.ets.bc)[,1]
+autoplot(fc.ets.bc)+autolayer(test.bc)+ggtitle("Figure 6. ETS(A,A,N) forecast with Box-Cox transformed data")+ylab("Box-Cox price")
+```
+
+
+```{r echo = FALSE}
+backtransform.fc.ets.bc = ((lambda*ets.y.hat.bc+1)/abs(lambda*ets.y.hat.bc+1))*(abs(lambda*ets.y.hat.bc+1))^(1/lambda)
+ets.error.bc = mean(sum((backtransform.fc.ets.bc-test)^2))
+paste("ETS(AAN) MSE with Box-Cox transformation =",round(ets.error.bc))
+```
+#ETS forecast with Box-Cox transformed data provided a slightly smaller test error 7369 compared to 7466 of non-transformed series.
+
+
+
+#####################
+ETS from 2008
+#####################
+# Below are the predictions with train data starting in January 2008. By doing so, years with low volatility will be excluded from the set and the model will learn using only data with high volatility that existed in the oil market since the Great Recession. I will explore whether a model that has not seen prior years will be able to predict better year 2020.
+
+
+```{r echo = FALSE}
+wti.2008 = window(wti, start = c(2008,1))
+```
+
+```{r echo = FALSE}
+BoxCox.lambda(wti.2008)
+```
+#Lambda calculated for a shorter training set is 1.92. When lambda > 1, this introduces even more variance into the series. Therefore, to be consistent, I will apply the same lambda in the Box-Cox transformation
+
+
+```{r echo = FALSE}
+wti.2008.bc = BoxCox(wti.2008, lambda = lambda)
+```
+
+```{r echo = FALSE}
+train.2008 = window(wti.2008.bc, end = c(2019,12))
+test.2008 = window(wti.2008.bc, start = c(2020,1))
+```
+
+#ETS function suggest Damped trend again, and I will force an undamped trend manually
+```{r echo = FALSE}
+ets(train.2008)
+```
+
+
+```{r echo = FALSE}
+wti.ets.2008 = ets(train.2008, model = "AAN", damped = FALSE)
+wti.ets.2008
+```
+
+```{r echo = FALSE}
+fc.ets.2008 = forecast(wti.ets.2008, h=19)
+ets.2008.y.hat = as.data.frame(fc.ets.2008)[,1]
+autoplot(fc.ets.2008)+autolayer(test.2008)+ggtitle("Figure 7. ETS(A,A,N) forecast with Box-Cox transformed data starting in 2008")+ylab("Box-Cox price")
+```
+
+
+```{r echo = FALSE}
+backtransform.fc.ets.2008 = ((lambda*ets.2008.y.hat+1)/abs(lambda*ets.2008.y.hat+1))*(abs(lambda*ets.2008.y.hat+1))^(1/lambda)
+ets.2008.error = mean(sum((backtransform.fc.ets.2008 - test)^2))
+paste("ETS(AAN) MSE with Box-Cox transformation start 2008 =",round(ets.2008.error))
+```
+
+#####################
+ETS from 2014
+#####################
+I will now have another iteration on the forecast by including data only from 2014, another volatile year when oil prices collapsed due to flooding the market with the US shale oil
+```{r echo = FALSE}
+wti.2014 = window(wti, start = c(2014,1))
+wti.2014.bc = BoxCox(wti.2014, lambda = lambda)
+```
+
+```{r echo = FALSE}
+train.2014 = window(wti.2014.bc, end = c(2019,12))
+test.2014 = window(wti.2014.bc, start = c(2020,1))
+```
+
+#in the autoselected model, the algorith does not suggest a trend. Again, planning to implement the trend manually
+```{r echo = FALSE}
+ets(train.2014)
+```
+
+
+```{r echo = FALSE}
+wti.ets.2014 = ets(train.2014, model = c("AAN"))
+wti.ets.2014
+```
+
+
+```{r echo = FALSE}
+fc.ets.2014 = forecast(wti.ets.2014, h=19)
+ets.2014.y.hat = as.data.frame(fc.ets.2014)[,1]
+autoplot(fc.ets.2014)+autolayer(test.2014)+ggtitle("Figure 8. ETS forecast with Box-Cox transformed data starting in 2014")+ylab("Box-Cox price")
+```
+
+```{r echo = FALSE}
+backtransform.fc.ets.2014 = ((lambda*ets.2014.y.hat+1)/abs(lambda*ets.2014.y.hat+1))*(abs(lambda*ets.2014.y.hat+1))^(1/lambda)
+ets.2014.error = mean(sum((backtransform.fc.ets.2014 - test)^2))
+paste("ETS(AAN) MSE with Box-Cox transformation start 2014 =",round(ets.2014.error))
+```
+#Forecast with the training set that begins in 2014 provided the smallest error of 6118. However, this forescast is not good enough as the true values fall outside of the prediction interval.
+
+#####################################
+ETS, 2020 excluded from the test set
+#####################################
+
+# I will now forecast using only 7 months of 2020. First 7 months of 2021 will now look like 7 months of 2020. The goal of this experiment is to show the year 2020 was an unusual year and that year 2021 is back on track with the overall trend of the development of the oil price
+```{r echo = FALSE}
+test.no2020.bc = window(test.bc, start = c(2021, 1))
+test.no2020.bc = ts(test.no2020.bc, start = c(2020,1), frequency = 12)
+
+test.no2020 = window(test, start = c(2021, 1))
+test.no2020 = ts(test.no2020, start = c(2020,1), frequency = 12)
+```
+
+```{r echo = FALSE}
+#ETS already exists
+wti.ets.bc
+```
+#Forecast will be made for h = 7 and compared with the test set that only contains 7 months of 2021 which will appear as 2020
+```{r echo = FALSE}
+fc.ets.no2020 = forecast(wti.ets.bc, h=7)
+ets.no2020.y.hat = as.data.frame(fc.ets.no2020)[,1]
+autoplot(fc.ets.no2020)+autolayer(test.no2020.bc, series = "test")+ggtitle("Figure 9. ETS forecast with Box-Cox transformed data, no 2020")
+```
+
+```{r echo = FALSE}
+backtransform.fc.ets.no2020 = ((lambda*ets.no2020.y.hat+1)/abs(lambda*ets.no2020.y.hat+1))*(abs(lambda*ets.no2020.y.hat+1))^(1/lambda)
+ets.no2020.error = mean(sum((backtransform.fc.ets.no2020 - test.no2020)^2))
+
+paste("ETS(AAN) MSE with Box-Cox transformation, no 2020 in the test set =",round(ets.no2020.error))
+```
+#ETS showed a test error of only 301 and the forecast was able to predict an upward trend.
+
+
+
+#####################
+ARIMA model
+#####################
+
+#model selection
+```{r echo = FALSE}
+library(urca)
+summary(ur.kpss(train.bc))
+```
+#Data is not stationary. Differencing needs to be applied
+```{r echo = FALSE}
+train.bc.diff1 = diff(train.bc)
+summary(ur.kpss(train.bc.diff1))
+```
+#P-value is significant. After one differencing data is stationary
+
+#Data looks stationary now
+```{r echo = FALSE}
+autoplot(train.bc.diff1)+ggtitle("WTI data differenced 1 time")+ylab("Differenced Price, $")+ggtitle("Figure 10. WTI time series differenced once")
+```
+
+
+#Lets look at Autocorrelation and Partial autocorrelation
+```{r echo = FALSE}
+ggAcf(train.bc.diff1)+ggtitle("Figure 11. Autocorrelation plot of differenced Box-Cox data")
+```
+```{r echo = FALSE}
+ggPacf(train.bc.diff1)+ggtitle("Figure 12. Partial autocorrelation plot of differenced Box-Cox data")
+```
+#Both Acf and Pacf plot have significant spike at lag 1. All other lag show sinusoidal pattern. With a diferencing 1 ARIMA(0,1,0) might be appropriate, but it's worth checking models (1,1,0), (0,1,1) and (1,1,1).
+
+```{r echo = FALSE}
+#Create a list with models
+models = list(c(0,1,0), c(1,1,0), c(0,1,1), c(1,1,1))
+```
+
+
+```{r echo = FALSE}
+#Run through a loop of fitting models and store AICc in a vector
+aicc_store = c()
+for (model in models){
+  fit = Arima(train.bc, order = model)
+  aicc_store = c( aicc_store, fit$aicc)
+}
+aicc_store
+#Obtain index of the minimum AICc in the vector
+index.aicc.min  = which.min(aicc_store)
+
+#create an "order" vector passed to the model
+order = models[[index.aicc.min]]
+print("The best model suggested by Acf and Pacf is"); order
+```
+#The best performing model is Arima(1,1,0) with AICc = -927.98 and p-value of Ljung-Box test 0.6052
+
+```{r echo = FALSE}
+arima.fit = Arima(train.bc, order = order)
+summary(arima.fit)
+```
+```{r echo = FALSE}
+checkresiduals(arima.fit)
+```
+Figure 13. Residuals from ARIMA(1,1,0)
+
+#Let's check what model does the Arima function suggest:
+```{r echo = FALSE}
+wti.auto = auto.arima(train.bc)
+wti.auto
+```
+```{r echo = FALSE}
+checkresiduals(wti.auto)
+```
+Figure 14. Residuals from the auto ARIMA(0,1,2)
+
+#Auto selected ARIMA model (0,1,2) has a slightly larger AICc -927.3 and the p-value is slightly smaller (more significant) 0.5796. However, there is not enough support for q = 2, as there is only one significant spike in the Acf plot. Forecasting will proceed with a manually chosen model
+
+
+```{r echo = FALSE}
+fc.arima = forecast(arima.fit, h = 19)
+autoplot(fc.arima)+autolayer(test.bc, series = "test")+ggtitle(" Figure 15. Forecasts from ARIMA(1,1,0)")
+```
+```{r echo = FALSE}
+arima.y.hat = as.data.frame(fc.arima)[,1]
+backtransform.fc.arima = ((lambda*arima.y.hat+1)/abs(lambda*arima.y.hat+1))*(abs(lambda*arima.y.hat+1))^(1/lambda)
+arima.error = mean(sum((backtransform.fc.arima - test)^2))
+paste("ARIMA(1,1,0) MSE =",round(arima.error))
+```
+########################
+ARIMA starting from 2008
+########################
+
+```{r echo = FALSE}
+#Test and train sets already exist 
+#train.2008 
+#test.2008 
+```
+
+#model selection
+```{r echo = FALSE}
+summary(ur.kpss(train.2008))
+```
+#Data is not stationary. Differencing needs to be applied
+```{r echo = FALSE}
+train.2008.diff1 = diff(train.2008)
+summary(ur.kpss(train.2008.diff1))
+```
+#P-value is significant. After one differencing data is stationary
+
+```{r echo = FALSE}
+autoplot(train.2008.diff1)+ggtitle("Figure 16. Difference once data starting 2008")+ylab("Differenced price, $")
+```
+#Let's take a look at Autocorrelation and Partial autocorrelation plots
+```{r echo = FALSE}
+ggAcf(train.2008.diff1)+ggtitle("Figure 17. Autocorrelation plot of differenced data from 2008")
+```
+```{r echo = FALSE}
+ggPacf(train.2008.diff1)+ggtitle("Figure 18. Partial autocorrelation plot of differenced data from 2008")
+```
+#Acf has two significant spikes at lag 1 and 2, suggestive that q = 2, but also lags show a sinusoidal behavior it can also be true that q = 0. PACF has a very significant spike at lag 1 and a spike just over significane level at lag 3. Models with p = 1,3, d=1 and q =0,1,2 will be explored. 1,1,1; 1,1,2, 3,1,1, 3,1,2,  1,1,0,  3,1,0
+
+
+```{r echo = FALSE}
+#Create a list with models
+models = list(c(1,1,1), c(1,1,2), c(3,1,1), c(3,1,2),  c(1,1,0),  c(3,1,0))
+models
+```
+
+```{r echo = FALSE}
+#Run through a loop of fitting models and store AICc in a vector
+aicc_store = c()
+for (model in models){
+  fit = Arima(train.2008, order = model)
+  aicc_store = c( aicc_store, fit$aicc)
+}
+aicc_store
+#Obtain index of the minimum AICc in the vector
+index.aicc.min  = which.min(aicc_store)
+
+#create an "order" vector passed to the model
+order = models[[index.aicc.min]]
+print("The best model suggested by Acf and Pacf is"); order
+```
+```{r echo = FALSE}
+#Fit the model
+arima.2008 = Arima(train.2008, order = order)
+summary(arima.2008)
+checkresiduals(arima.2008)
+```
+Figure 19. Residuals from ARIMA (3,1,1)
+
+```{r echo = FALSE}
+auto.2008 = auto.arima(train.2008)
+auto.2008
+checkresiduals(auto.2008)
+```
+Figure 19. Residuals from auto ARIMA (1,1,0)
+
+#Manually selected model has a lower AICc and a less significant p-value
+
+
+#Forecast with Arima model
+```{r echo = FALSE}
+fc.arima.2008 = forecast(arima.2008, h = 19)
+autoplot(fc.arima.2008)+autolayer(test.bc, series = "test")+ggtitle("Figure 20. Forecasts from ARIMA(1,1,0), start 2008")+ylab("Box-Cox price")
+```
+```{r echo = FALSE}
+arima.y.hat.2008 = as.data.frame(fc.arima.2008)[,1]
+backtransform.fc.arima.2008 = ((lambda*arima.y.hat.2008+1)/abs(lambda*arima.y.hat.2008+1))*(abs(lambda*arima.y.hat.2008+1))^(1/lambda)
+arima.error.2008 = mean(sum((backtransform.fc.arima.2008 - test)^2))
+
+paste("ARIMA(1,1,0) from 2008 MSE =",round(arima.error.2008))
+```
+
+
+########################
+ARIMA starting from 2014
+########################
+
+```{r echo = FALSE}
+#Test and train sets already exist 
+#train.2014 
+#test.2014 
+```
+
+#model selection
+```{r echo = FALSE}
+summary(ur.kpss(train.2014))
+```
+#Data is not stationary. Differencing needs to be applied
+```{r echo = FALSE}
+train.2014.diff1 = diff(train.2014)
+summary(ur.kpss(train.2014.diff1))
+```
+#P-value is significant. After one differencing data is stationary
+
+```{r echo = FALSE}
+autoplot(train.2014.diff1)+ggtitle("Figure 21. Differenced once data from 2014")+ylab("Differenced price, $")
+```
+#Lets look at Autocorrelation and Partial autocorrelation
+```{r echo = FALSE}
+ggAcf(train.2014.diff1)+ggtitle("Figure 22. Autocorrelation plot of differenced once data from 2014")
+```
+```{r echo = FALSE}
+ggPacf(train.2014.diff1)+ggtitle("Figure 23. Partial autocorrelation plot of differenced once data from 2014")
+```
+#Both Acf and Pacf plot have significant spike at lag 1. All other lag show sinusoidal pattern. With a diferencing 1 ARIMA(0,1,0) might be appropriate, but it's worth checking models (1,1,0), (0,1,1) and (1,1,1).
+
+```{r echo = FALSE}
+#Create a list with models
+models = list(c(0,1,0), c(1,1,0), c(0,1,1), c(1,1,1))
+models
+```
+
+```{r echo = FALSE}
+#Run through a loop of fitting models and store AICc in a vector
+aicc_store = c()
+for (model in models){
+  fit = Arima(train.2014, order = model)
+  aicc_store = c( aicc_store, fit$aicc)
+}
+aicc_store
+#Obtain index of the minimum AICc in the vector
+index.aicc.min  = which.min(aicc_store)
+
+#create an "order" vector passed to the model
+order = models[[index.aicc.min]]
+print("The best model suggested by Acf and Pacf is"); order
+```
+
+```{r echo = FALSE}
+#Fit the model
+arima.2014 = Arima(train.2014, order = order)
+summary(arima.2014)
+```
+```{r echo = FALSE}
+checkresiduals(arima.2014)
+```
+Figure 24. Residuals from ARIMA(1,1,0). Data starting 2014
+
+#Best model suggested by Acf and Pacf is fit2.2014 Arima(1,1,0)
+
+Auto.arima suggested that model as well
+```{r echo = FALSE}
+auto.2014 = auto.arima(train.2014)
+auto.2014
+```
+
+```{r echo = FALSE}
+fc.arima.2014 = forecast(arima.2014, h = 19)
+autoplot(fc.arima.2014)+autolayer(test.bc, series = "test")+ggtitle("Figure 25.Forecasts from ARIMA(1,1,0). Data from 2014")
+```
+```{r echo = FALSE}
+arima.y.hat.2014 = as.data.frame(fc.arima.2014)[,1]
+backtransform.fc.arima.2014 = ((lambda*arima.y.hat.2014+1)/abs(lambda*arima.y.hat.2014+1))*(abs(lambda*arima.y.hat.2014+1))^(1/lambda)
+arima.error.2014 = mean(sum((backtransform.fc.arima.2014 - test)^2))
+paste("ARIMA(1,1,0) from 2014 MSE =",round(arima.error.2014))
+```
+
+
+
+##################################
+ARIMA without 2020
+##################################
+
+```{r echo = FALSE}
+#test set already exists
+test.no2020
+
+#Arima model already exists
+arima.fit
+```
+
+
+#Forecast will be made for h = 7 and compared with the test set that only contains 7 months of 2021 which will appear as 2020
+```{r echo = FALSE}
+fc.arima.no2020 = forecast(arima.fit, h = 7)
+autoplot(fc.arima.no2020)+autolayer(test.no2020.bc, series = "test")+ggtitle("Figure 26. Forecast from ARIMA(1,1,0), year 2020 excluded")
+```
+```{r echo = FALSE}
+arima.y.hat.no2020 = as.data.frame(fc.arima.no2020)[,1]
+backtransform.fc.arima.no2020 = ((lambda*arima.y.hat.no2020+1)/abs(lambda*arima.y.hat.no2020+1))*(abs(lambda*arima.y.hat.no2020+1))^(1/lambda)
+arima.error.no2020 = mean(sum((backtransform.fc.arima.no2020 - test.no2020)^2))
+
+paste("ARIMA(1,1,0), no 2020 =",round(arima.error.no2020))
+```
