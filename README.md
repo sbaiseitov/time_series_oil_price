@@ -1,4 +1,4 @@
-# 1. Data description
+**# 1. Data description**
 
 WTI is a monthly average price of the West Texas Intermediate benchmark crude oil from 1995 until July 2021. Data was taken from a public source at https://sproule.com/price-forecast/ "Escalated Forecast " link.
 
