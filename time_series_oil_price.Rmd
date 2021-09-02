@@ -1,6 +1,6 @@
 ```{r echo = FALSE}
 rm(list = ls())
-setwd("C:/Users/Sanzhar/OneDrive/Documents/Bay Path/Time series/Working folder")
+setwd("C:/Users/Sanzhar/Documents/GitHub/ts_project")
 library(fpp2)
 ```
 
